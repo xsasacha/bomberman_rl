@@ -1,0 +1,11 @@
+Eigene Features sollten stark mit dem Reward shaping (= neue aufgetretene Events) verbunden sein -> Absprache welche features handgecrafted werden.
+Ich sehe zur Zeit nicht wie PCA o.Ä. sinnvoll eingesetzt werden können, außer womöglich nur auf "field" aus dem state -> sinnvoll?
+
+Welche handcrafted features wären gut?:
+Das Spiel hat mehrere Komponenten: Münzen finden und einsammeln, Bomben ausweichen (also bestmöglich auch gegnern ausweichen), gegner töten (zu gegnern hingehen und Bombe legen, kann aber gefährlich sein), 
+Wichtig wären also features die angeben können - wie gefährlich eine Position ist (Bomben und evtl Gegner), 
+					       - wie vielversprechend eine Position ist (Münzen hoher Wert, Kisten mittel, Gegner variabel -> hyperparameter)
+Um eine Position zu bewerten gibt es mehrere Möglichkeiten:
+		- Entfernung zur nächsten Bombe, Münze, Kiste, Gegner
+		- Häufigkeit von Münzen, Kisten, ... in der Nähe der Position
+=> Zu letzterem können wir gut features berechnen.
