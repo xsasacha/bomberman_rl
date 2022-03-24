@@ -41,7 +41,7 @@ def setup(self):
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
 
-#TODO: MAybe add a new_game_state argument that is default None, if it is given don't simulate the action, just pick the new game state
+#TODO: Maybe add a new_game_state argument that is default None, if it is given don't simulate the action, just pick the new game state
 def q_function(state, action, weights):
     state_copy = state.copy()
     player_pos = state['self'][3]
@@ -57,6 +57,8 @@ def q_function(state, action, weights):
 
     if(action_number is None):
         print('Invalid action')
+
+    #print("q:", action_number)
 
     features = state_to_features(state_copy)
 

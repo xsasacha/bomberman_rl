@@ -15,6 +15,7 @@ Transition = namedtuple('Transition',
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 3  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
+N = 5
 
 # Events
 PLACEHOLDER_EVENT = "PLACEHOLDER"
@@ -47,6 +48,7 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    self.n_step_buffer = deque(maxlen=N)
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -67,7 +69,6 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
-
     old_features = state_to_features(old_game_state)
     new_features = state_to_features(new_game_state)
 
@@ -94,28 +95,39 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     # state_to_features is defined in callbacks.py
     self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
 
-
-    #learning part -------------------------------------------------------------------------------------------------------------------------
-
-    #hyperparameters
-    discount_factor = 0.6
-    learning_rate = 0.1
-
-    #train the model
-    weights = self.model
     print(events)
-    reward = reward_from_events(self, events)
-    print(reward)
-    greedy_action = choose_greedy_action(new_game_state, weights)
-    action_number = ACTIONS_TO_NUMBERS[self_action]
 
-    #SARSA
-    #weights[action_number] = weights[action_number] + learning_rate * state_to_features(new_game_state) * ((reward + discount_factor * q_function(new_game_state, greedy_action, weights)) - q_function(old_game_state, self_action, weights))
-    weights[action_number] = weights[action_number] + learning_rate * state_to_features(old_game_state) * ((reward + discount_factor * q_function(new_game_state, greedy_action, weights)) - q_function(old_game_state, self_action, weights))
-    #weights[action_number] = weights[action_number] + learning_rate * ((reward + discount_factor * q_function(new_game_state, greedy_action, weights)) - q_function(old_game_state, self_action, weights))
-    #update the model
-    self.model = weights
-    #print(weights)
+    #Use all the gathered information to fill the n-step n_step_buffer
+    self.n_step_buffer.append(Transition(old_game_state, self_action, new_game_state, reward_from_events(self, events)))
+
+    # if the n step buffer is filled, compute the n-step Transition
+    if(len(self.n_step_buffer) == N):
+        n_step_old_game_state = self.n_step_buffer[0][0]
+        n_step_action = self.n_step_buffer[0][1]
+        n_step_new_game_state = self.n_step_buffer[-1][2]
+
+        #compute the discounted reward over the n-steps
+        discount_factor = 0.75
+        n_step_reward = np.dot(np.asarray([discount_factor**np.arange(N)]), np.array([self.n_step_buffer[i][-1] for i in range(N)]))
+
+
+        #learning part -------------------------------------------------------------------------------------------------------------------------
+
+        #hyperparameters
+        learning_rate = 0.1
+
+        #train the model
+        weights = self.model
+
+        greedy_action = choose_greedy_action(n_step_new_game_state, weights)
+        action_number = ACTIONS_TO_NUMBERS[n_step_action]
+
+        #SARSA
+        #weights[action_number] = weights[action_number] + learning_rate * state_to_features(new_game_state) * ((reward + discount_factor * q_function(new_game_state, greedy_action, weights)) - q_function(old_game_state, self_action, weights))
+        weights[action_number] = weights[action_number] + learning_rate * ((n_step_reward + discount_factor**N * q_function(n_step_new_game_state, greedy_action, weights)) - q_function(n_step_old_game_state, n_step_action, weights))
+        #update the model
+        self.model = weights
+        #print(weights)
 
 def choose_greedy_action(state, weights):
     ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
