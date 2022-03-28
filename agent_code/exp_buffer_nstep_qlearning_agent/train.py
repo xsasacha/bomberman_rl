@@ -7,15 +7,17 @@ import events as e
 from .callbacks import state_to_features, q_function
 
 import numpy as np
+import random
 
 # This is only an example!
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 3  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-N = 5
+N = 5                           # for n-step TD learning
+BATCH_SIZE = 50                 # for batch learning
 
 # Events
 PLACEHOLDER_EVENT = "PLACEHOLDER"
@@ -49,6 +51,12 @@ def setup_training(self):
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     self.n_step_buffer = deque(maxlen=N)
+    self.statistics = []
+    self.collected_coins = 0
+
+    #hyperparameters for q-learning
+    self.learning_rate = 0.01
+    self.discount_factor = 0.75
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -78,7 +86,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     if new_features[0] < old_features[0]:               #TODO: Check if a coin was collected, the next one will be further away, but it shouldn't be a penalty (also for neighborhood and reachable coins)
         events.append(REMOVED_FROM_COIN_EVENT)
-    '''
+
     if new_features[1] > old_features[1]:
         events.append(INCREASED_NEIGHBORHOOD_COINS_EVENT)
 
@@ -87,16 +95,16 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     if new_features[2] > old_features[2]:
         events.append(INCREASED_REACHABLE_COINS_EVENT)
-    '''
+
     if np.all(np.equal(new_features[:3], old_features[:3])):
         events.append(NO_PROGRESS_EVENT)
 
 
     # state_to_features is defined in callbacks.py
-    self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
+    #self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
 
-    print(events)
-    print(state_to_features(old_game_state))
+    #print(events)
+    #print(state_to_features(old_game_state))
 
     #Use all the gathered information to fill the n-step n_step_buffer
     self.n_step_buffer.append(Transition(old_game_state, self_action, new_game_state, reward_from_events(self, events)))
@@ -108,14 +116,22 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         n_step_new_game_state = self.n_step_buffer[-1][2]
 
         #compute the discounted reward over the n-steps
-        discount_factor = 0.75
+        discount_factor = self.discount_factor
         n_step_reward = np.dot(np.asarray([discount_factor**np.arange(N)]), np.array([self.n_step_buffer[i][-1] for i in range(N)]))
+
+        #track statistics
+        if 'COIN_COLLECTED' in events:
+            self.collected_coins += 1
+
+        #add transition
+        self.transitions.append(Transition(n_step_old_game_state, n_step_action, n_step_new_game_state, n_step_reward))
+
 
 
         #learning part -------------------------------------------------------------------------------------------------------------------------
 
         #hyperparameters
-        learning_rate = 0.1
+        '''learning_rate = self.learning_rate
 
         #train the model
         weights = self.model
@@ -129,6 +145,10 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         #update the model
         self.model = weights
         #print(weights)
+
+        self.learning_rate *= 0.995
+        '''
+
 
 def choose_greedy_action(state, weights):
     ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -153,11 +173,45 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+    #self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))   #(hopefully) this transition is also stored in games events occured
+
+    #Batch learning -----------------------------------------------
+    #hyperparameters
+    discount_factor = self.discount_factor
+    learning_rate = self.learning_rate
+
+    if(len(self.transitions) >= BATCH_SIZE):
+        # pick a random batch
+        batch = random.sample(self.transitions, BATCH_SIZE)
+        weights = self.model
+        weights_update = np.zeros_like(weights)
+
+        for transition in batch:
+            old_state = transition[0]
+            new_state = transition[2]
+            action = transition[1]
+            reward = transition[3]
+            greedy_action = choose_greedy_action(new_state, weights)
+            action_number = ACTIONS_TO_NUMBERS[action]
+
+            #n-step TD Q-learning (part 1)
+            weights_update[action_number] += state_to_features(old_state) * ((reward + discount_factor**N * q_function(new_state, greedy_action, weights.tolist())) - q_function(old_state, action, weights.tolist()))
+
+        #n-step TD Q-learning (part 2)
+        weights = weights + (learning_rate/BATCH_SIZE) * weights_update
+
+        #update the model
+        self.model = weights
+
+    #self.learning_rate *= 0.9
 
     # Store the model
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
+
+    self.statistics.append([last_game_state['round'], last_game_state['step'], self.collected_coins])
+    print(self.statistics)
+    self.collected_coins = 0
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -171,6 +225,7 @@ def reward_from_events(self, events: List[str]) -> int:
         e.COIN_COLLECTED: 10,
         e.KILLED_OPPONENT: 5,
         e.BOMB_DROPPED: -1,
+        e.KILLED_SELF: -20,
         PLACEHOLDER_EVENT: -.1,  # idea: the custom event is bad
         CLOSER_TO_COIN_EVENT: 5,
         REMOVED_FROM_COIN_EVENT: -0.5,

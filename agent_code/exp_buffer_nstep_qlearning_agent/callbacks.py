@@ -4,7 +4,6 @@ import random
 
 import numpy as np
 from queue import Queue
-import copy
 
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -42,10 +41,7 @@ def setup(self):
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
 
-        #self.model = np.array([[0, 0, -1], [0, 1, 0], [0, 0, 1], [0, -1, 0], [0, 0, 0], [0, 0, 0]])
-        #self.model = np.array([[1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0]])
-
-#TODO: MAybe add a new_game_state argument that is default None, if it is given don't simulate the action, just pick the new game state
+#TODO: Maybe add a new_game_state argument that is default None, if it is given don't simulate the action, just pick the new game state
 def q_function(state, action, weights):
     state_copy = state.copy()
     player_pos = state['self'][3]
@@ -61,6 +57,8 @@ def q_function(state, action, weights):
 
     if(action_number is None):
         print('Invalid action')
+
+    #print("q:", action_number)
 
     features = state_to_features(state_copy)
 
@@ -111,9 +109,9 @@ def act(self, game_state: dict) -> str:
     #self.logger.debug("Querying model for action.")
     #return np.random.choice(ACTIONS, p=self.model)
 
-    random_prob = .1
+    random_prob = .2
     if self.train and random.random() < random_prob:
-        print('Random')
+        #print('Random')
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
@@ -121,60 +119,9 @@ def act(self, game_state: dict) -> str:
     self.logger.debug("Querying model for action.")
     #compute the q-values for all possible actions
     q_values = [q_function(game_state, action, self.model) for action in ACTIONS]
-    '''print(q_values)
-    print(state_to_features(game_state))
-    print(np.argmax(q_values))
-    print(ACTIONS[np.argmax(q_values)])
-    print("-------------------------")
-    '''
-    if(np.all(q_values[0] == q_values)):
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
-
     #select the best action
     return ACTIONS[np.argmax(q_values)]
 
-
-#TODO; Maybe also consider coordinates with other players as blocked
-def find_distance_original(start_coordinates, goal_coordinates, arena):
-    # We work with a copy of the arena so we can change values
-    arena_copy = np.copy(arena)
-
-    #Block the start coordinates for paths
-    arena_copy[start_coordinates[0], start_coordinates[1]] = 10
-
-    # Use a BFS to find the shortest path towards the goal position, beginning from the starting position
-    parent = {}                                  # Save parents of coordinates in paths in a dict
-    q = Queue()
-    q.put(start_coordinates)
-    path_length = 0
-
-    parent[(start_coordinates[0], start_coordinates[1])] = None
-
-    while not q.empty():
-        # take first element
-        current_element = q.get()
-
-        # check if the path is complete (termination requirement)
-        if(current_element[0] == goal_coordinates[0] and current_element[1] == goal_coordinates[1]):
-            #return path_length, construct_path(parent, goal_coordinates)
-            path = construct_path(parent, goal_coordinates)
-            return len(path), construct_path(parent, goal_coordinates)
-
-        # do all possible steps for a position (UP, DOWN, LEFT, RIGHT) -> since the arena is surrounded by walls we don't need to check if a step would exceed the boundaries of the arena error, every path stops before
-        # TODO: Maybe vectorize this step
-        steps = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-        for step in steps:
-            new_position = current_element + np.asarray(step)
-            if arena_copy[new_position[0], new_position[1]] == 0:
-                q.put(new_position)
-
-                #save the parent of the new position
-                parent[(new_position[0], new_position[1])] = current_element
-                # block the new coordinates for other paths in this search
-                arena_copy[new_position[0], new_position[1]] = 10
-
-    # Only reach this point if no path to the goal exists
-    return 1000
 
 #TODO; Maybe also consider coordinates with other players as blocked
 def find_distance(start_coordinates, goal_coordinates, arena):
@@ -192,38 +139,6 @@ def find_distance(start_coordinates, goal_coordinates, arena):
 
     parent[(start_coordinates[0], start_coordinates[1])] = None
 
-
-    #make sure we start at a crossroad
-    #check if we can move up or down and check if we can move right or left
-    if(((arena[start_coordinates[0]][start_coordinates[1] - 1] == 0) or (arena[start_coordinates[0]][start_coordinates[1] + 1] == 0)) and ((arena[start_coordinates[0] - 1][start_coordinates[1]] == 0) or (arena[start_coordinates[0] + 1][start_coordinates[1]] == 0))):
-        #if we are in this if condition, we are at a corssroad and have nothing to do
-        pass
-    else:
-        #we are between 2 crossroads, this means we have to perform one step of the BFS so we can compute it more efficient afterwards
-        # take first element
-        current_element = q.get()
-
-        # check if the path is complete (termination requirement)
-        if(current_element[0] == goal_coordinates[0] and current_element[1] == goal_coordinates[1]):
-            #return path_length, construct_path(parent, goal_coordinates)
-            path = construct_path(parent, goal_coordinates)
-            return len(path), construct_path(parent, goal_coordinates)
-
-        # do all possible steps for the start position (UP, DOWN, LEFT, RIGHT) -> since the arena is surrounded by walls we don't need to check if a step would exceed the boundaries of the arena error, every path stops before
-        steps = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-        for step in steps:
-            new_position = current_element + np.asarray(step)
-            if arena_copy[new_position[0], new_position[1]] == 0:
-                q.put(new_position)
-
-                #save the parent of the new position
-                parent[(new_position[0], new_position[1])] = current_element
-                # block the new coordinates for other paths in this search
-                arena_copy[new_position[0], new_position[1]] = 10
-
-
-
-
     while not q.empty():
         # take first element
         current_element = q.get()
@@ -240,31 +155,12 @@ def find_distance(start_coordinates, goal_coordinates, arena):
         for step in steps:
             new_position = current_element + np.asarray(step)
             if arena_copy[new_position[0], new_position[1]] == 0:
-                #q.put(new_position)
+                q.put(new_position)
 
                 #save the parent of the new position
                 parent[(new_position[0], new_position[1])] = current_element
                 # block the new coordinates for other paths in this search
                 arena_copy[new_position[0], new_position[1]] = 10
-
-                #check if the new position is the goal position
-                if(new_position[0] == goal_coordinates[0] and new_position[1] == goal_coordinates[1]):
-                    #return path_length, construct_path(parent, goal_coordinates)
-                    path = construct_path(parent, goal_coordinates)
-                    return len(path), construct_path(parent, goal_coordinates)
-
-
-                #this is more efficient than the simple BFS, but we need to comment out "q.put(new_position)" (6 lines above). MORE IMPORTANT: Before we do this we must somehow be sure to be at a crossroad!!!
-                #go one step further in this direction and to the same step again, because we can to "2-steps" from each crossroad to the next one
-                new_new_position = new_position + np.array(step)
-
-                if arena_copy[new_new_position[0], new_new_position[1]] == 0:
-                    q.put(new_new_position)
-
-                    #save the parent of the new new position
-                    parent[(new_new_position[0], new_new_position[1])] = current_element
-                    # block the new new coordinates for other paths in this search
-                    arena_copy[new_new_position[0], new_new_position[1]] = 10
 
     # Only reach this point if no path to the goal exists
     return 1000
@@ -351,7 +247,7 @@ def state_to_features(game_state: dict) -> np.array:
     #--------------------------------------
     #Feature 2: Coins in a certain neighborhood (3-neighborhood)
     #--------------------------------------
-    '''distances = np.array([])
+    ''' distances = np.array([])
     close_coins = 0
 
     for coin in coins:                                                             #IDEA: Use a loop and check if x and y values have a difference smaller than the searched neighborhood, so we do get a square neighborhood instead of a circular
@@ -376,7 +272,7 @@ def state_to_features(game_state: dict) -> np.array:
 
     features.append(reachable_coins)
 
-    '''
+'''
     #--------------------------------------
     #Feature 4 & 5: Direction of the nearest coin (float values)
     #--------------------------------------

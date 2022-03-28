@@ -35,7 +35,7 @@ def setup(self):
         self.logger.info("Setting up model from scratch.")
         #weights = np.random.rand(len(ACTIONS))
         #self.model = weights / weights.sum()
-        self.model = np.full((len(ACTIONS), 9), 0.01)
+        self.model = np.full((len(ACTIONS), 3), 0.01)
     else:
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
@@ -109,7 +109,7 @@ def act(self, game_state: dict) -> str:
     #self.logger.debug("Querying model for action.")
     #return np.random.choice(ACTIONS, p=self.model)
 
-    random_prob = .1
+    random_prob = .2
     if self.train and random.random() < random_prob:
         print('Random')
         self.logger.debug("Choosing action purely at random.")
@@ -247,7 +247,7 @@ def state_to_features(game_state: dict) -> np.array:
     #--------------------------------------
     #Feature 2: Coins in a certain neighborhood (3-neighborhood)
     #--------------------------------------
-    distances = np.array([])
+    ''' distances = np.array([])
     close_coins = 0
 
     for coin in coins:                                                             #IDEA: Use a loop and check if x and y values have a difference smaller than the searched neighborhood, so we do get a square neighborhood instead of a circular
@@ -272,7 +272,7 @@ def state_to_features(game_state: dict) -> np.array:
 
     features.append(reachable_coins)
 
-
+'''
     #--------------------------------------
     #Feature 4 & 5: Direction of the nearest coin (float values)
     #--------------------------------------
@@ -305,10 +305,10 @@ def state_to_features(game_state: dict) -> np.array:
     #--------------------------------------
     #Feature 6 - 9 check if movement in the direction is possible (order: UP, DOWN, LEFT, RIGHT)
     #--------------------------------------
-    features.append(arena[player[0]][player[1] - 1] == 0)
-    features.append(arena[player[0]][player[1] + 1] == 0)
-    features.append(arena[player[0] - 1][player[1]] == 0)
-    features.append(arena[player[0] + 1][player[1]] == 0)
+    #features.append(arena[player[0]][player[1] - 1] == 0)
+    #features.append(arena[player[0]][player[1] + 1] == 0)
+    #features.append(arena[player[0] - 1][player[1]] == 0)
+    #features.append(arena[player[0] + 1][player[1]] == 0)
 
 
 

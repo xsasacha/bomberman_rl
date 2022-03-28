@@ -47,6 +47,11 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    self.statistics = []
+    self.collected_coins = 0
+
+    self.learning_rate = 0.01
+    self.min_learning_rate = 0.00001
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -99,13 +104,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     #hyperparameters
     discount_factor = 0.6
-    learning_rate = 0.1
+    learning_rate = self.learning_rate
 
     #train the model
     weights = self.model
-    print(events)
+    #print(events)
     reward = reward_from_events(self, events)
-    print(reward)
+    #print(reward)
     greedy_action = choose_greedy_action(new_game_state, weights)
     action_number = ACTIONS_TO_NUMBERS[self_action]
 
@@ -113,9 +118,18 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     #weights[action_number] = weights[action_number] + learning_rate * state_to_features(new_game_state) * ((reward + discount_factor * q_function(new_game_state, greedy_action, weights)) - q_function(old_game_state, self_action, weights))
     weights[action_number] = weights[action_number] + learning_rate * state_to_features(old_game_state) * ((reward + discount_factor * q_function(new_game_state, greedy_action, weights)) - q_function(old_game_state, self_action, weights))
     #weights[action_number] = weights[action_number] + learning_rate * ((reward + discount_factor * q_function(new_game_state, greedy_action, weights)) - q_function(old_game_state, self_action, weights))
+
+    #print(weights)
     #update the model
     self.model = weights
     #print(weights)
+
+    if 'COIN_COLLECTED' in events:
+        self.collected_coins += 1
+
+    #if(learning_rate >= self.min_learning_rate):
+    #    self.learning_rate *= 0.9995
+    self.learning_rate *= 0.9995
 
 def choose_greedy_action(state, weights):
     ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -146,6 +160,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
 
+    self.statistics.append([last_game_state['round'], last_game_state['step'], self.collected_coins])
+    print(self.statistics)
+    self.collected_coins = 0
 
 def reward_from_events(self, events: List[str]) -> int:
     """
@@ -158,8 +175,9 @@ def reward_from_events(self, events: List[str]) -> int:
         e.COIN_COLLECTED: 10,
         e.KILLED_OPPONENT: 5,
         e.BOMB_DROPPED: -1,
+        e.KILLED_SELF: -5,
         PLACEHOLDER_EVENT: -.1,  # idea: the custom event is bad
-        CLOSER_TO_COIN_EVENT: 5,
+        CLOSER_TO_COIN_EVENT: 1,
         REMOVED_FROM_COIN_EVENT: -0.5,
         INCREASED_NEIGHBORHOOD_COINS_EVENT: 3,
         DECREASED_NEIGHBORHOOD_COINS_EVENT: -0.1,

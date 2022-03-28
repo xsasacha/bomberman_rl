@@ -4,7 +4,6 @@ import random
 
 import numpy as np
 from queue import Queue
-import copy
 
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -36,14 +35,11 @@ def setup(self):
         self.logger.info("Setting up model from scratch.")
         #weights = np.random.rand(len(ACTIONS))
         #self.model = weights / weights.sum()
-        self.model = np.full((len(ACTIONS), 3), 0.01)
+        self.model = np.full((len(ACTIONS), 5), 0.01)
     else:
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
-
-        #self.model = np.array([[0, 0, -1], [0, 1, 0], [0, 0, 1], [0, -1, 0], [0, 0, 0], [0, 0, 0]])
-        #self.model = np.array([[1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0]])
 
 #TODO: MAybe add a new_game_state argument that is default None, if it is given don't simulate the action, just pick the new game state
 def q_function(state, action, weights):
@@ -121,6 +117,7 @@ def act(self, game_state: dict) -> str:
     self.logger.debug("Querying model for action.")
     #compute the q-values for all possible actions
     q_values = [q_function(game_state, action, self.model) for action in ACTIONS]
+    #select the best action
     '''print(q_values)
     print(state_to_features(game_state))
     print(np.argmax(q_values))
@@ -130,51 +127,9 @@ def act(self, game_state: dict) -> str:
     if(np.all(q_values[0] == q_values)):
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
 
-    #select the best action
+
     return ACTIONS[np.argmax(q_values)]
 
-
-#TODO; Maybe also consider coordinates with other players as blocked
-def find_distance_original(start_coordinates, goal_coordinates, arena):
-    # We work with a copy of the arena so we can change values
-    arena_copy = np.copy(arena)
-
-    #Block the start coordinates for paths
-    arena_copy[start_coordinates[0], start_coordinates[1]] = 10
-
-    # Use a BFS to find the shortest path towards the goal position, beginning from the starting position
-    parent = {}                                  # Save parents of coordinates in paths in a dict
-    q = Queue()
-    q.put(start_coordinates)
-    path_length = 0
-
-    parent[(start_coordinates[0], start_coordinates[1])] = None
-
-    while not q.empty():
-        # take first element
-        current_element = q.get()
-
-        # check if the path is complete (termination requirement)
-        if(current_element[0] == goal_coordinates[0] and current_element[1] == goal_coordinates[1]):
-            #return path_length, construct_path(parent, goal_coordinates)
-            path = construct_path(parent, goal_coordinates)
-            return len(path), construct_path(parent, goal_coordinates)
-
-        # do all possible steps for a position (UP, DOWN, LEFT, RIGHT) -> since the arena is surrounded by walls we don't need to check if a step would exceed the boundaries of the arena error, every path stops before
-        # TODO: Maybe vectorize this step
-        steps = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-        for step in steps:
-            new_position = current_element + np.asarray(step)
-            if arena_copy[new_position[0], new_position[1]] == 0:
-                q.put(new_position)
-
-                #save the parent of the new position
-                parent[(new_position[0], new_position[1])] = current_element
-                # block the new coordinates for other paths in this search
-                arena_copy[new_position[0], new_position[1]] = 10
-
-    # Only reach this point if no path to the goal exists
-    return 1000
 
 #TODO; Maybe also consider coordinates with other players as blocked
 def find_distance(start_coordinates, goal_coordinates, arena):
@@ -220,7 +175,6 @@ def find_distance(start_coordinates, goal_coordinates, arena):
                 parent[(new_position[0], new_position[1])] = current_element
                 # block the new coordinates for other paths in this search
                 arena_copy[new_position[0], new_position[1]] = 10
-
 
 
 
@@ -285,6 +239,44 @@ def construct_path(parent, goal_coordinates):
 
     return path
 
+'''Maybe we have to check if the new coordinates exceed the range of the arena. Also the explosion stops at stone walls, this computation just skips them (but it is still an approximation).'''
+def affected_range(bomb_coordinates):
+    # list with all coordinates of every field affected by given bomb
+    affected_range=[[bomb_coordinates[0],bomb_coordinates[1]]]
+
+    # calculate coordinates with a radius of 3 from bomb coordinates
+    for i in range(1,4):
+        bomb_range.append([bomb_coordinates[0]+i,bomb_coordinates[1]])
+        bomb_range.append([bomb_coordinates[0]-i,bomb_coordinates[1]])
+        bomb_range.append([bomb_coordinates[0],bomb_coordinates[1]+i])
+        bomb_range.append([bomb_coordinates[0],bomb_coordinates[1]-i])
+
+    # return list with coordinates of affected fields
+    return affected_range
+
+def dangerous_fields(game_state):
+    dangerous_fields = [] # list with coordinates of all potentially affected fields
+    active_bombs = game_state['bombs'][0]   # list of coordinates of all currently active bombs
+    for bomb in active_bombs:
+        affected_fields_bomb = affected_range(bomb)
+        for x in affected_fields_bomb:
+            dangerous_fields.append(x)
+    return dangerous_fields
+
+
+def get_free_neighbours(coordinates, game_state):
+    # list of free neighbours
+    free_neighbours = []
+    # list of directions in form of (x, y) coordinates
+    directions = [(coordinates[0], coordinates[1] + 1), (coordinates[0], coordinates[1] - 1), (coordinates[0] + 1, coordinates[1]), (coordinates[0] - 1, coordinates[1])]
+    for x, y in directions:
+        # check if field is free
+        if(arena[x, y] == 0):
+            free_neighbours.append(x, y)
+
+    return free_neighbours
+
+
 def state_to_features(game_state: dict) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
@@ -318,6 +310,7 @@ def state_to_features(game_state: dict) -> np.array:
     coins = game_state['coins']             # coordinates of all (visible) coins
     player = game_state['self'][3]          # coordinates of the player
     arena = game_state['field']             # the arena
+    #active_bombs = game_state['bombs'][0]   # list of coordinates of all currently active bombs
     best_path = []                          #for paths through the map, needed for feature 4&5 (alternativ)
 
     #--------------------------------------
@@ -351,7 +344,7 @@ def state_to_features(game_state: dict) -> np.array:
     #--------------------------------------
     #Feature 2: Coins in a certain neighborhood (3-neighborhood)
     #--------------------------------------
-    '''distances = np.array([])
+    distances = np.array([])
     close_coins = 0
 
     for coin in coins:                                                             #IDEA: Use a loop and check if x and y values have a difference smaller than the searched neighborhood, so we do get a square neighborhood instead of a circular
@@ -376,7 +369,7 @@ def state_to_features(game_state: dict) -> np.array:
 
     features.append(reachable_coins)
 
-    '''
+
     #--------------------------------------
     #Feature 4 & 5: Direction of the nearest coin (float values)
     #--------------------------------------
@@ -417,8 +410,44 @@ def state_to_features(game_state: dict) -> np.array:
 
 
     # End of coin features -----------------------------------------------------------------------------------------------------------------------------
+    '''
+    #--------------------------------------
+    #Feature 10 count of destructable crates in range of player
+    #--------------------------------------
+    # crates have entry = 1 within the arena; crate_coordinates = array with coordiantes of crates
+    crate_coordinates = np.array([np.where(arena == 1)[0], np.where(arena == 1)[1]]).T
+    crate_list = crate_coordinates.tolist()
+    # count of crates which are reachable by player
+    reachable_crates = 0
+    #create list with all affected fields when player places bomb
+    affected_fields = affected_range(player)
 
-    #print(features)
+    # count how many crates are in affected range
+    for field in affected_fields:
+        if (field in crate_list) and player in active_bombs:
+            reachable_crates += 1
+    '''
+    ''' #Alternativ: Vllt effizienter da if(field in crate list) jedes mal die ganze crate list(bis 100 einträge) überprüft -> O(len(affected_fields) * len(crate_list))
+    for field in affected_fields:
+        if (arena[field[0]][field[1]] == 1) and player in active_bombs:
+            reachable_crates += 1
+    ''' #In diesem Fall müssen wir aber schauen dass affected fields keine Grenzen der Arena überschreitet (womöglich eh besser, da es dann weniger Felder werden die überprüft werden -> effizienter)
+
+    '''
+    # divide reachable crates with total count of crates
+    crates = reachable_crates / 13
+    features.append(crates)
+    '''
+    #--------------------------------------
+    #Feature 11 TODO: direction to position with max number of destructable crates
+    #--------------------------------------
+    '''Falls wir eh eine Fkt. brauchen die einfach iterativ die 13 betroffenen Felder um eine Koordinate testet (auf Kisten) können wir das auch im vorherigen Feature nutzen!'''
+    #--------------------------------------
+    #Feature 12 direction to next safe field
+    #--------------------------------------
+    '''Vorschlag: Ein breadth first search der beim spieler startet und sofort stoppt wenn er ein nicht gefährdetes Feld erreicht (dafür müssten alle gefährlichen Koordinaten zuerst in einer Kopie der arena markiert werden in der der BFS läuft, ist aber wahrscheinlich ziemlich effizient)'''
+
+    '''Feature Idee: Integer die angibt "wenn ich jetzt eine Bombe lege, wie weit ist das nächste sichere Feld entfernt (seeehr hoch falls es keins mehr gibt)"?'''
 
     for feature in features:
         channels.append(feature)

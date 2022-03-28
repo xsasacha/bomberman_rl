@@ -4,7 +4,6 @@ import random
 
 import numpy as np
 from queue import Queue
-import copy
 
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -111,9 +110,9 @@ def act(self, game_state: dict) -> str:
     #self.logger.debug("Querying model for action.")
     #return np.random.choice(ACTIONS, p=self.model)
 
-    random_prob = .1
+    random_prob = .3
     if self.train and random.random() < random_prob:
-        print('Random')
+        #print('Random')
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
@@ -220,7 +219,6 @@ def find_distance(start_coordinates, goal_coordinates, arena):
                 parent[(new_position[0], new_position[1])] = current_element
                 # block the new coordinates for other paths in this search
                 arena_copy[new_position[0], new_position[1]] = 10
-
 
 
 
